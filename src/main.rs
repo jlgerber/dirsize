@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let p = pp.path();
                 let metadata = fs::metadata(p);
                 if debug {
-                    println!("path {:?}", &p);
+                    eprintln!("path {:?}", &p);
                 }
                 match metadata {
                     Ok(meta) => {
