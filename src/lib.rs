@@ -1,17 +1,20 @@
 use byte_unit::{AdjustedByte, Byte, ByteUnit};
 use ignore::WalkBuilder;
 use ignore::WalkState::*;
+use ignore::Error;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+
+pub mod error;
+pub use error::DirsizeError;
 
 /// Custom return type
 pub struct DirSize {
     pub size: AdjustedByte,
     pub file_cnt: usize,
-    errors: Option<Vec<PathBuf>>,
+    errors: Option<Vec<DirsizeError>>,
 }
 
 impl DirSize {
@@ -19,7 +22,7 @@ impl DirSize {
         self.errors.is_some()
     }
     /// retrieve the errors
-    pub fn take_errors(&mut self) -> Option<Vec<PathBuf>> {
+    pub fn take_errors(&mut self) -> Option<Vec<DirsizeError>> {
         self.errors.take()
     }
 }
@@ -40,7 +43,7 @@ pub fn get_dirsize(
 
     let total_size = Arc::new(AtomicUsize::new(0));
     let file_cnt = Arc::new(AtomicUsize::new(0));
-    let errors: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+    let errors: Arc<Mutex<Vec<DirsizeError>>> = Arc::new(Mutex::new(Vec::new()));
     let _ = WalkBuilder::new(path)
         .ignore(false)
         .threads(threads)
@@ -56,23 +59,46 @@ pub fn get_dirsize(
             let file_cnt_c = Arc::clone(&file_cnt);
             let errors_c = Arc::clone(&errors);
             Box::new(move |result| {
-                let pp = result.unwrap();
-                let p = pp.path();
-                let metadata = fs::metadata(p);
-                if debug {
-                    eprintln!("path {:?}", &p);
+                if result.is_ok() {
+                    let pp = result.unwrap();
+                    let p = pp.path();
+                    let metadata = fs::metadata(p);
+                    if debug {
+                        eprintln!("path {:?}", &p);
+                    }
+                    match metadata {
+                        Ok(meta) => {
+                            let adjusted_size = meta.len() / meta.nlink();
+                            total_size_c.fetch_add(adjusted_size as usize, Ordering::SeqCst);
+                            file_cnt_c.fetch_add(1, Ordering::SeqCst);
+                        }
+                        _ => {
+                            let mut v = errors_c.lock().expect("Unable to lock mutex.");
+                            v.push(DirsizeError::Metadata(p.to_path_buf()));
+                        }
+                    };
+                } else {
+                    match result {
+                        Err(Error::WithDepth{err,..}) => {
+                            match *err {
+                                Error::WithPath{path,..} => {
+                                    let mut v = errors_c.lock().expect("Unable to lock mutex");
+                                    v.push(DirsizeError::PermissionDenied(path)); 
+                                },
+                                _ => {
+                                    let mut v = errors_c.lock().expect("Unable to lock mutex");
+                                    v.push(DirsizeError::UnknownError); 
+                                }
+                            }
+                      
+                        }
+                        _ => {
+    
+                            let mut v = errors_c.lock().expect("Unable to lock mutex");
+                            v.push(DirsizeError::UnknownError); 
+                        }
+                    };
                 }
-                match metadata {
-                    Ok(meta) => {
-                        let adjusted_size = meta.len() / meta.nlink();
-                        total_size_c.fetch_add(adjusted_size as usize, Ordering::SeqCst);
-                        file_cnt_c.fetch_add(1, Ordering::SeqCst);
-                    }
-                    _ => {
-                        let mut v = errors_c.lock().unwrap();
-                        v.push(p.to_path_buf());
-                    }
-                };
                 Continue
             })
         });

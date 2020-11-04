@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if dirsize.has_errors() {
         println!("Problem reading metadata from file:");
         for error in dirsize.take_errors().unwrap() {
-            println!("\t{}", error.display());
+            println!("\t{}", error);
         }
     }
     Ok(())
