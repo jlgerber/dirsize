@@ -6,29 +6,8 @@ use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use structopt::StructOpt;
 
-/// dirsize calculates the cumulative size taken up by
-/// a supplied directory's contents.
-/// dirsize does not follow or read symlinks when calculating this size.
-/// dirsize does attempt to adjust sizing by dividing the size of each file by
-/// its hard link count. If all of the hardlinks are not contained within the
-/// provided directory, this may result in underestimation.
-#[derive(StructOpt, Debug)]
-pub struct Opt {
-    /// Number of threads to use, defaulting to available threads
-    #[structopt(short = "t", long = "threads")]
-    threads: Option<usize>,
-    /// Path to operate upon
-    path: String,
-    /// Print the name of each filepath as we scan it
-    #[structopt(short = "d", long = "debug")]
-    debug: bool,
-    /// Unit to output data in, defaulting to MB. (b, k, kib, mb, mib, gb, gib, tb, tib, pb, pib)
-    #[structopt(short = "u", long = "unit")]
-    unit: Option<ByteUnit>,
-}
-
+/// Custom return type
 pub struct DirSize {
     pub size: AdjustedByte,
     pub file_cnt: usize,
@@ -45,15 +24,24 @@ impl DirSize {
     }
 }
 
-pub fn get_dirsize(args: Opt) -> Result<DirSize, Box<dyn std::error::Error>> {
-    let debug = args.debug;
-    let unit = args.unit.unwrap_or(ByteUnit::GB);
-    let threads = args.threads.unwrap_or(0);
+/// Given a path, and assorted arguments, calculate 
+/// the total size of a directory's contents and return
+/// it allong with the total number of files visited 
+/// and any files that we were not able to read metadata
+/// for. 
+pub fn get_dirsize(
+    path: String,
+    threads: Option<usize>,
+    debug: bool,
+    unit: Option<ByteUnit>,
+) -> Result<DirSize, Box<dyn std::error::Error>> {
+    let unit = unit.unwrap_or(ByteUnit::GB);
+    let threads = threads.unwrap_or(0);
 
     let total_size = Arc::new(AtomicUsize::new(0));
     let file_cnt = Arc::new(AtomicUsize::new(0));
     let errors: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-    let _ = WalkBuilder::new(args.path)
+    let _ = WalkBuilder::new(path)
         .ignore(false)
         .threads(threads)
         .git_global(false)
