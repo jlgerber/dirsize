@@ -1,7 +1,7 @@
 use byte_unit::ByteUnit;
-use dirsize::get_dirsize;
-use structopt::StructOpt;
+use dirsize::{get_dirsize, DirsizeRequest};
 use std::time::Instant;
+use structopt::StructOpt;
 
 /// dirsize calculates the cumulative size taken up by
 /// a supplied directory's contents.
@@ -34,7 +34,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let before = Instant::now();
 
-    let mut dirsize = get_dirsize(path, threads, verbose, unit)?;
+    let mut dirsize = get_dirsize(DirsizeRequest {
+        path,
+        threads,
+        verbose,
+        unit,
+    })?;
+    
     println!("\nTotal size of directory:\n    {}", dirsize.size);
     println!("\nTotal number of files:  \n    {}", dirsize.file_cnt);
     println!("\n Elapsed Time:          \n    {:.2?}", before.elapsed());

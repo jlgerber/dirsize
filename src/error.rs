@@ -1,6 +1,7 @@
 use thiserror::Error;
 use std::path::PathBuf;
 
+/// Custom Error for dirsize
 #[derive(Debug, Error, PartialEq)]
 pub enum DirsizeError {
     #[error("PermissionDenied: Cannot access `{0}`")]
