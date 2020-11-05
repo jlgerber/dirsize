@@ -8,7 +8,13 @@ use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::ffi::OsStr;
+use lazy_static::lazy_static;
 
+lazy_static! {
+
+    pub static ref SNAPDIR: &'static OsStr = OsStr::new(".snapshot");
+}
 /// struct which packages the returned information from
 /// the request to get the total size of a directory.
 pub struct DirSize {
@@ -72,6 +78,7 @@ pub fn get_dirsize(request: DirsizeRequest) -> Result<DirSize, Box<dyn std::erro
         .git_ignore(false)
         .git_exclude(false)
         .follow_links(false)
+        .hidden(false) // look at hidden files
         .parents(false)
         .filter_entry(|entry| !entry.path_is_symlink())
         .build_parallel()
@@ -85,6 +92,16 @@ pub fn get_dirsize(request: DirsizeRequest) -> Result<DirSize, Box<dyn std::erro
                 if result.is_ok() {
                     let pp = result.unwrap();
                     let p = pp.path();
+                    // need to skip the .snapshot directory as we dont 
+                    // want to count items within it
+                    if p.is_dir() && p.file_name() == Some(&SNAPDIR) {
+                        return Skip;
+                    }
+                    // for that matter, we dont need to gather metadata
+                    // for directories so let us continue
+                    if !p.is_file() {
+                        return Continue;
+                    }
                     let metadata = fs::metadata(p);
                     match metadata {
                         Ok(meta) => {

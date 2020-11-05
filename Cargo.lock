@@ -97,6 +97,7 @@ version = "0.2.0"
 dependencies = [
  "byte-unit",
  "ignore",
+ "lazy_static",
  "pad",
  "structopt",
  "thiserror",
