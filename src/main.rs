@@ -1,6 +1,7 @@
 use byte_unit::ByteUnit;
 use dirsize::get_dirsize;
 use structopt::StructOpt;
+use std::time::Instant;
 
 /// dirsize calculates the cumulative size taken up by
 /// a supplied directory's contents.
@@ -15,9 +16,9 @@ pub struct Opt {
     threads: Option<usize>,
     /// Path to operate upon
     path: String,
-    /// Print the name of each filepath as we scan it
-    #[structopt(short = "d", long = "debug")]
-    debug: bool,
+    /// Print the size and name of each filepath as we scan it
+    #[structopt(short = "v", long = "verbose")]
+    verbose: bool,
     /// Unit to output data in, defaulting to MB. (b, k, kib, mb, mib, gb, gib, tb, tib, pb, pib)
     #[structopt(short = "u", long = "unit")]
     unit: Option<ByteUnit>,
@@ -27,13 +28,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Opt {
         threads,
         path,
-        debug,
+        verbose,
         unit,
     } = Opt::from_args();
 
-    let mut dirsize = get_dirsize(path, threads, debug, unit)?;
-    println!("Total size of directory:\n    {}", dirsize.size);
-    println!("Total number of files:\n      {}", dirsize.file_cnt);
+    let before = Instant::now();
+
+    let mut dirsize = get_dirsize(path, threads, verbose, unit)?;
+    println!("\nTotal size of directory:\n    {}", dirsize.size);
+    println!("\nTotal number of files:  \n    {}", dirsize.file_cnt);
+    println!("\n Elapsed Time:          \n    {:.2?}", before.elapsed());
+
     if dirsize.has_errors() {
         println!("Problem reading metadata from file:");
         for error in dirsize.take_errors().unwrap() {

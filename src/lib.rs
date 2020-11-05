@@ -1,11 +1,12 @@
 use byte_unit::{AdjustedByte, Byte, ByteUnit};
+use ignore::Error;
 use ignore::WalkBuilder;
 use ignore::WalkState::*;
-use ignore::Error;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use pad::PadStr;
 
 pub mod error;
 pub use error::DirsizeError;
@@ -27,15 +28,15 @@ impl DirSize {
     }
 }
 
-/// Given a path, and assorted arguments, calculate 
+/// Given a path, and assorted arguments, calculate
 /// the total size of a directory's contents and return
-/// it allong with the total number of files visited 
+/// it allong with the total number of files visited
 /// and any files that we were not able to read metadata
-/// for. 
+/// for.
 pub fn get_dirsize(
     path: String,
     threads: Option<usize>,
-    debug: bool,
+    verbose: bool,
     unit: Option<ByteUnit>,
 ) -> Result<DirSize, Box<dyn std::error::Error>> {
     let unit = unit.unwrap_or(ByteUnit::GB);
@@ -63,12 +64,18 @@ pub fn get_dirsize(
                     let pp = result.unwrap();
                     let p = pp.path();
                     let metadata = fs::metadata(p);
-                    if debug {
-                        eprintln!("path {:?}", &p);
-                    }
                     match metadata {
                         Ok(meta) => {
                             let adjusted_size = meta.len() / meta.nlink();
+                            if verbose {
+                                let sz = Byte::from_bytes(adjusted_size as u128)
+                                .get_appropriate_unit(false).to_string().pad_to_width(16);
+                                println!(
+                                    "{} {}",
+                                    &sz,
+                                    &p.to_str().expect("couldnt unwrap")
+                                );
+                            }
                             total_size_c.fetch_add(adjusted_size as usize, Ordering::SeqCst);
                             file_cnt_c.fetch_add(1, Ordering::SeqCst);
                         }
@@ -79,23 +86,19 @@ pub fn get_dirsize(
                     };
                 } else {
                     match result {
-                        Err(Error::WithDepth{err,..}) => {
-                            match *err {
-                                Error::WithPath{path,..} => {
-                                    let mut v = errors_c.lock().expect("Unable to lock mutex");
-                                    v.push(DirsizeError::PermissionDenied(path)); 
-                                },
-                                _ => {
-                                    let mut v = errors_c.lock().expect("Unable to lock mutex");
-                                    v.push(DirsizeError::UnknownError); 
-                                }
+                        Err(Error::WithDepth { err, .. }) => match *err {
+                            Error::WithPath { path, .. } => {
+                                let mut v = errors_c.lock().expect("Unable to lock mutex");
+                                v.push(DirsizeError::PermissionDenied(path));
                             }
-                      
-                        }
+                            _ => {
+                                let mut v = errors_c.lock().expect("Unable to lock mutex");
+                                v.push(DirsizeError::UnknownError);
+                            }
+                        },
                         _ => {
-    
                             let mut v = errors_c.lock().expect("Unable to lock mutex");
-                            v.push(DirsizeError::UnknownError); 
+                            v.push(DirsizeError::UnknownError);
                         }
                     };
                 }
